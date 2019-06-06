@@ -1,7 +1,7 @@
 version: "3.7"
 services:
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch-oss:6.7.0
+    image: docker.elastic.co/elasticsearch/elasticsearch-oss:${ELASTIC_VERSION:-6.7.0}
     environment:
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
       - "cluster.name=es-cluster"
@@ -25,13 +25,14 @@ services:
       replicas: 1
 
   logstash:
-    image: docker.elastic.co/logstash/logstash-oss:6.7.0
+    image: docker.elastic.co/logstash/logstash-oss:${ELASTIC_VERSION:-6.7.0}
     environment:
       - LOGSPOUT=ignore
+      - "ES_JAVA_OPTS=-Xms256m -Xmx256m"
     networks:
       - esnet
     configs:
-      - source: ls_config.v2
+      - source: ls_config
         target: /usr/share/logstash/pipeline/logstash.conf
 
   kibana:
@@ -53,20 +54,36 @@ services:
       replicas: 1
 
   logspout:
-    image: gliderlabs/logspout
-    command: 'udp://logstash:5000'
-    networks:
-      - esnet
+    image: ruanbekker/logspout-logstash:v3.2.4
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /etc/hostname:/etc/host_hostname:ro
+    environment:
+      - ROUTE_URIS=logstash+tcp://logstash:5000
+    networks:
+      - esnet
     deploy:
       mode: global
+
+  webapp:
+    image: nginx
+    networks:
+      - esnet
+    environment:
+      - LOGSTASH_TAGS=docker,production
+      - LOGSTASH_FIELDS=service_name={{.Service.Name}},task.id={{.Task.ID}}
+      - DOCKER_LABELS=""
+    ports:
+      - 8082:80
+    labels:
+      com.example.lekke: "yes this is lekke"
+    deploy:
+      labels:
+        com.example.description: "this is spartaaaa"
 
 networks:
   esnet:
     driver: overlay
 
 configs:
-  ls_config.v2:
+  ls_config:
     file: $PWD/logstash/config/logstash.conf
